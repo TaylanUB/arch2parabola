@@ -1,0 +1,53 @@
+#!/bin/bash
+# (C) This script is free software! You can do what you want with it, as long as you don't convert it into proprietary software
+# and if you redistribute it either vertabim or modified you must do so under the same licence or GPLv3 or later.
+
+dirname=$(pwd)
+tempdir=$(mktemp -d)
+cd $tempdir
+
+#Run a sanity check
+which pacman sudo wget >/dev/null 2>/dev/null || {
+    echo "Cannot find pacman, sudo or wget, exiting";
+    exit 1
+}
+
+echo ""
+echo "Updating pacman database."
+echo ""
+sudo pacman -Sy --noconfirm >>"$dirname/db-sync" 2>>"$dirname/db-sync"
+
+echo "Downloading the whitelist of free software packages."
+echo ""
+wget http://www.parabolagnulinux.org/docs/whitelist.txt 2>/dev/null || {
+    echo "Download failed, exiting"
+    exit 1
+}
+
+a=($(cut -d: -f1 whitelist.txt))
+
+echo "Searching for packages in whitelist and not in repo"
+echo ""
+
+for i in ${a[@]} ; do
+    pacman -Si $i >/dev/null 2>/dev/null || echo $i >> "$dirname/in whitelist and not in repo"
+done
+
+echo "Downloading the blacklist of proprietary software packages."
+echo ""
+wget http://www.parabolagnulinux.org/docs/blacklist.txt 2>/dev/null || {
+    echo "Download failed, exiting"
+    exit 1
+}
+
+a=($(cut -d: -f1 blacklist.txt))
+
+echo "Searching for packages in blacklist and in repo"
+echo ""
+
+for i in ${a[@]} ; do
+    pacman -Si $i >/dev/null 2>/dev/null && echo $i >> "$dirname/in blacklist and in repo"
+done
+
+rm -rf $tempdir
+exit 0

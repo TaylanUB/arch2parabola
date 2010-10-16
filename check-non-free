@@ -1,0 +1,57 @@
+#!/bin/bash
+#  pkgbuild-check-nonfree
+#  Copyright 2010 Joshua Ismael Haase Hernández
+
+#  ---------- GNU General Public License 3 ----------
+                                                                             
+#  This file is part of Parabola.                                          
+                                                                             
+#  Parabola is free software: you can redistribute it and/or modify        
+#  it under the terms of the GNU General Public License as published by    
+#  the Free Software Foundation, either version 3 of the License, or       
+#  (at your option) any later version.                                     
+                                                                             
+#  Parabola is distributed in the hope that it will be useful,             
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of          
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the           
+#  GNU General Public License for more details.                            
+                                                                             
+#  You should have received a copy of the GNU General Public License       
+#  along with Parabola.  If not, see <http://www.gnu.org/licenses/>.       
+                                                                             
+
+
+
+dir=$(pwd)
+tempdir=$(mktemp -d)
+cd $tempdir
+
+#Run a sanity check
+which pacman wget >/dev/null 2>/dev/null || {
+    echo "Cannot find pacman or wget, exiting";
+    exit 1
+}
+
+echo "Downloading the blacklist of proprietary software packages."
+echo ""
+wget http://www.parabolagnulinux.org/docs/blacklist.txt 2>/dev/null || {
+    echo "Download failed, exiting"
+    exit 1
+}
+
+a=($(cut -d: -f1 blacklist.txt))
+
+source dir/PKGBUILD
+
+echo ""
+b[0]=""
+
+for i in ${a[@]} ; do
+    pacman -Q $i >/dev/null 2>/dev/null && b[${#b[@]}]=$i
+done
+
+for i in $(seq 0 ${#b[@]}) ; do
+    echo ${b[$i]}
+done
+rm -rf $tempdir
+exit 0
