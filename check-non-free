@@ -41,15 +41,11 @@ wget http://www.parabolagnulinux.org/docs/blacklist.txt 2>/dev/null || {
 
 a=($(cut -d: -f1 blacklist.txt))
 
-source dir/PKGBUILD
-
-echo ""
-b[0]=""
-
 for i in ${a[@]} ; do
     pacman -Q $i >/dev/null 2>/dev/null && b[${#b[@]}]=$i
 done
-
+echo "This proprietary software found on your system:"
+echo ""
 for i in $(seq 0 ${#b[@]}) ; do
     echo ${b[$i]}
 done
