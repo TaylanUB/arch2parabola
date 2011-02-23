@@ -1,91 +1,103 @@
 #!/bin/bash
 
 # (C) Joshua Ismael Haase Hernández 2010
-# This script is free software! You can do what you want with it, as long as you don't convert it into proprietary software
-# and if you redistribute it either vertabim or modified you must do so under the same licence.
+# Copyright © 2011 Joseph Graham
+# This script is free software! You can do what you want with it, as long as
+# you don't convert it into proprietary software and if you redistribute it
+# either vertabim or modified you must do so under the same licence.
 
+# Set this to the URL of the blacklist.
+blacklist_url="http://repo.parabolagnulinux.org/docs/blacklist.txt"
+
+# Make a temporary directory.
 tempdir=$(mktemp -d)
-logdir=$(pwd)
-logname=$(echo $logdir/arch2parabola$(date +%Y%m%d).log)
-mirrorfile=$()
-dependancies=(which date pacman wget seq sed wget test) # "seq" y "test" are in coreutils package
-                                                        # "sudo" might be optdepend or not be
-                                                        # used at all and require to use as root
-                                                        # as I did.
+
+# This will be the name of the log file.
+logname="$(pwd)/arch2parabola$(date +%Y%m%d).log"
+
+mirror=""
+
+# These are the dependencies of the script.
+dependancies=(which date pacman wget seq sed wget test)
+
 # ---------- Function Declarations ----------
 
 # Define the abort procedure.
-abort () {
-    cat <<EOF
-Something failed in $section
+function abort
+{
+    cat << EOF
+Something failed in ${section}.
 
-A debug log has been saved to $logname.
+A debug log has been saved to ${logname}.
 
-Please fix the error and re-run the script to finnish
-converting your system to Parabola Gnu/Linux.
+Please fix the error and re-run the script to finnish converting your system to
+Parabola Gnu/Linux.
 EOF
-    rm -rf $tempdir
+    rm -rf ${tempdir}
     exit 1
 }
 
 # Ask yes or no (y/n), if given, stop, otherwise keep asking.
 # uses variable "q"
-askyn () {
+function askyn
+{
     case "$1" in 
-	y) ;;
-	n) ;;
+	y | n ) ;;
 	*) echo Answer "y" or "n"
 	   read q
-	   askyn $q
+	   askyn ${q}
 	   ;;
     esac
 }
 
-log_section () {
-    cat >>$logname <<EOF
+# This function logs, and echos the section.
+function log_section
+{
+    cat >> ${logname} << EOF
 
-$section
+${section}
 
 EOF
-    echo ""
-    echo $section
+    echo
+    echo ${section}
 }
 
-log_cancel () {
-    if [ $q == "n" ]; then {
-	    echo "The user canceled the procedure" >> $logname
+# This function checks if the `askyn' function was cancelled, and if so, logs
+# it and aborts.
+function if_cancelled
+{
+    if [[ ${q} == "n" ]]
+    then
+	    echo "The user canceled the procedure" >> ${logname}
 	    abort
-	}
-    else {
-	    q=""
-	}
+    else
+	    unset q
     fi
 }
-    
 
 section=" ---------- Sanity Check ----------"
 
-if [ $EUID != 0 ]; then {
-	cat <<EOF
-This script should be run as root user
-EOF
-    }
-    exit 1
-fi
+declare issues=0
 
-# Package revision won't be needed if this software is packaged,
-# this could be treated as dependancies.
-for x in ${dependancies[@]}; do
-    which $x >/dev/null 2>/dev/null || {
-	issues="yes"
-	"$x is missing, please install." >> $logname
-    }
+# If the user is not root then error and exit.
+(( EUID )) && { echo "This script should be run as root user" ; exit 1 ; }
+
+# Check if the dependencies are available. This won't be needed if this
+# script is packaged.
+for dep in ${dependancies[@]}
+do
+    if ! which ${dep} > /dev/null 2> /dev/null
+    then
+	issues="1"
+	"${dep} is missing, please install it." >> ${logname}
+    fi
 done
 
 # Check if the system is running a custom kernel.
-pacman -Q kernel26 >/dev/null 2>/dev/null || {
-    issues="yes"
-    cat >>$logname <<EOF
+if ! pacman -Q kernel26 >/dev/null 2>/dev/null
+then
+    issues="1"
+    cat >> ${logname} << EOF
 The system is running a custom kernel.
 Please uninstall it before running this script.
 
@@ -94,71 +106,87 @@ You can find a PKGBUILD for a linux-libre kernel at
 http://repo.parabolagnulinux.org/pkgbuilds/
 
 EOF
-}
-
-if [ $issues == "yes"]; then {
-abort
-    }
 fi
+
+# If anything went wrong then abort.
+(( issues )) && abort
+
+unset issues
 
 section="---------- Non free packages revision ----------"
 log_section
 
-cd $tempdir
+cd ${tempdir}
 
 echo "Downloading the blacklist of proprietary software packages."
-wget http://www.parabolagnulinux.org/docs/blacklist.txt >>$logname 2>> $logname || {
-    echo "Download failed, exiting" >> $logname
+
+if ! wget ${blacklist_url} >> ${logname} \
+    2>> ${logname}
+then
+    echo "Download failed, exiting" >> ${logname}
     abort
-}
-a=($(cut -d: -f1 blacklist.txt))
+fi
+
+declare -a exists
 
 echo "Searching for proprietary software on the system."
-echo ""
-b[0]="These proprietary software packages have been found on the system:"
+echo
+exists[0]="These proprietary software packages have been found on the system:"
 
-for i in ${a[@]} ; do
-    pacman -Q $i >/dev/null 2>/dev/null && b[${#b[@]}]=$i
+for package in $(cut -d: -f1 blacklist.txt)
+do
+    # Check if the package is in pacman's database.
+    if pacman -Q ${package} >/dev/null 2>/dev/null
+    then
+        # Add this package to the array of blacklited packages that have been
+	# found in the system.
+	exists[${#exists[@]}]=${package}
+
+	# Echo and log the package.
+	echo ${package} | tee -a ${logname}
+    fi
 done
 
-for i in $(seq 0 ${#b[@]}) ; do
-    echo ${b[$i]}
-    echo ${b[$i]} >> $logname
-done
-unset b[0]
+unset exists[0]
+
 section="---------- Pacman mirrorlist replacement ----------"
 log_section
-cat <<EOF
+cat << EOF
 * Pacman will be synced to avoid any errors.
 * Pacman mirror list will be replaced for parabola mirror list.
 
 Do you wish to continue? [y/n]
 EOF
 askyn
-log_cancel
+if_cancelled
 
-# Update pacman
-pacman -S --noconfirm pacman || {
-    cat >> $logname <<EOF
-Syncing pacman failed.
-EOF
+# Update pacman.
+if ! pacman -S --noconfirm pacman
+then
+    echo "Syncing pacman failed." >> ${logname}
     abort
-}
-pacman -U --noconfirm $mirror >>$logname 2>> $logname || {
-    cat >> $logname <<EOF 
-Installing the libre mirror list failed, maybe there's a new
-mirrorlist and we need to update the script.
+fi
+
+################################################################################
+########################## The mirror var is not set! ##########################
+################################################################################
+
+if ! pacman -U --noconfirm ${mirror} >> ${logname} 2>> ${logname}
+then
+    cat >> ${logname} << EOF 
+Installing the libre mirror list failed.
+Maybe there's a new mirrorlist and we need to update the script.
 
 If that's the case send a mail to dev@list.parabolagnulinux.org
 
 Otherwise, try again.
 EOF
     abort
-}
+fi
 
 section="---------- Package Replacement ----------"
 log_section
-cat <<EOF
+cat << EOF
 
 * Pacman cache will be erased
 * Pacman database will be updated for parabola
@@ -167,59 +195,67 @@ cat <<EOF
 Do you wish to continue? [y/n] 
 EOF
 askyn
-log_cancel
+if_cancelled
 
-pacman -Scc --noconfirm >>$logname 2>> $logname || abort
-pacman -Syy --noconfirm >>$logname 2>> $logname || abort
+pacman -Scc --noconfirm >> ${logname} 2>> ${logname} || abort
+pacman -Syy --noconfirm >> ${logname} 2>> ${logname} || abort
 
-# # Manual way, it should be replaced by a field on blacklist.txt
-# # Here we declare packages that have a free replacement.
-# replacements=()
-# for x in ${replacements[@]}; do
-#     pacman -S --noconfirm $
-# done
+declare replacement
 
-# ----- blacklist.txt way -----. It should be this way, this way
-# linux-libre, etc, should be updated automaticaly
-
-for x in ${b[@]}; do
-    if [$x]; then
-	a=$(grep -e $x[:space:] blacklist.txt | cut -d: f2)
-	if [$a]; then
-	    pacman -S --noconfirm $a >>$logname 2>>$logname || abort
+# We search the blacklist to find packages that have libre replacements and
+# install them.
+for package in ${exists[@]}
+do
+    if [[ ${package} ]]
+    then
+	replacement=$(grep -e ${package}[:space:] blacklist.txt | cut -d: f2)
+	if [[ ${replacement} ]]
+	then
+	    pacman -S --noconfirm ${replacement} >> ${logname} 2>> ${logname} ||
+	    abort
 	fi
     fi
 done
+
+unset replacement
 
 section="---------- Non-free packages removal ----------"
 log_section
 cat <<EOF
 
-* Non free packages that doesn't have free replacement will be Removed
+* Non free packages that don't have free replacements will be Removed
 
 Do you wish to continue? [y/n] 
 EOF
 askyn
-log_cancel
+if_cancelled
 
-for x in ${b[@]}; do
-    pacman -Rc --noconfirm $x >>$logname 2>>$logname || abort
+# Remove the packages that don't have free replacements.
+for package in ${exists[@]}
+do
+    pacman -Rc --noconfirm ${package} >> ${logname} 2>> ${logname} || abort
 done
 
-rm -rf $tempdir
+rm -rf ${tempdir}
 
 section="---------- You are now on Parabola GNU/Linux ----------"
 log_section
-cat <<EOF
+cat << EOF
 Welcome to Freedom.
 
-* You have to manualy remove non-free packages from AUR.
+* You have to manually remove any non-free packages you installed from the AUR.
 
-A log of this 
 Do you wish to keep the log? [y/n] 
 EOF
+
 askyn
-if [ q == "n" ]; then
-    rm -f $logname
+
+# Ask the user if they want to keep the log and if not then delete it.
+if [[ ${q} == "y" ]]
+then
+    echo "The log has been saved in ${logname}"
+else
+    rm -f ${logname}
 fi
+
 exit 0

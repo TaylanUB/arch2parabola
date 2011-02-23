@@ -1,6 +1,7 @@
 #!/bin/bash
-#  pkgbuild-check-nonfree
+#  check-nonfree
 #  Copyright 2010 Joshua Ismael Haase Hernández
+#  Copyright © 2011 Joseph Graham
 
 #  ---------- GNU General Public License 3 ----------
                                                                              
@@ -18,36 +19,71 @@
                                                                              
 #  You should have received a copy of the GNU General Public License       
 #  along with Parabola.  If not, see <http://www.gnu.org/licenses/>.       
-                                                                             
 
+# Set this to the URL of the blacklist.
+blacklist_url="http://repo.parabolagnulinux.org/docs/blacklist.txt"
 
-
-dir=$(pwd)
+# Make a temproary directory and go to it.
 tempdir=$(mktemp -d)
-cd $tempdir
+cd ${tempdir}
 
 #Run a sanity check
-which pacman wget >/dev/null 2>/dev/null || {
-    echo "Cannot find pacman or wget, exiting";
+which pacman wget >/dev/null 2>/dev/null ||
+{
+    echo "Cannot find pacman or wget, exiting"
     exit 1
 }
 
+# Download the blacklist.
 echo "Downloading the blacklist of proprietary software packages."
-echo ""
-wget http://www.parabolagnulinux.org/docs/blacklist.txt 2>/dev/null || {
+echo
+wget ${blacklist_url} 2>/dev/null ||
+{
     echo "Download failed, exiting"
     exit 1
 }
 
-a=($(cut -d: -f1 blacklist.txt))
+declare -a exists
 
-for i in ${a[@]} ; do
-    pacman -Q $i >/dev/null 2>/dev/null && b[${#b[@]}]=$i
+for package in $(cut -d: -f1 blacklist.txt)
+do
+    # Check if the package is in pacman's database.
+    if pacman -Q ${package} >/dev/null 2>/dev/null
+    then
+        # Add this package to the array of blacklited packages that have been
+	# found in the system.
+	exists[${#exists[@]}]=${package}
+    fi
 done
-echo "This proprietary software found on your system:"
-echo ""
-for i in $(seq 0 ${#b[@]}) ; do
-    echo ${b[$i]}
+
+# Check if no proprietray software was found.
+if (( ! ${#exists[@]} ))
+then
+    echo "No proprietary software has been found on your system."
+
+    # Exit.
+    exit 0
+
+# Check if one proprietary software package was found.
+elif (( ${#exists[@]} = 1 ))
+then
+    echo "This proprietary package has been found on your system:"
+
+# Multiple proprietary software packages have been found.
+else
+    echo "These proprietary packages have been found on your system:"
+fi
+
+# Echo a blank line as a seperator.
+echo
+
+# Print all the proprietary software packages that have been found, seperated
+# by newlines.
+for package in ${exists[@]}
+do
+    echo ${package}
 done
+
 rm -rf $tempdir
+
 exit 0
