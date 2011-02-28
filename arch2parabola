@@ -211,6 +211,9 @@ EOF
     abort
 fi
 
+# Rename `mirrorlist.pacnew' to `mirrorlist'.
+mv /etc/pacman.d/mirrorlist.pacnew /etc/pacman.d/mirrorlist
+
 section="---------- Package Replacement ----------"
 log_section
 cat << EOF
