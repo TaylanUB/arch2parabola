@@ -7,7 +7,7 @@ arch2parabola:
      wants to contribute.
     ∙When the script finnishes it asks the user if they want to keep the log
      file or delete it. But that log file contains some essential things that
-     the user needs to see (such as pacman's output when in installs libre
+     the user needs to see (such as pacman's output when it installs libre
      replacements). These things should be output to the terminal, as well as
      written in the log. Use `tee' to do this.
 
