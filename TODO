@@ -2,9 +2,6 @@ arch2parabola:
 
     #High priority:
 
-    ∙The copyright holders (Joseph Graham and Joshua Ismael) have agreed to
-     change the license to GPLv3. This should be done ASAP in case anyone else
-     wants to contribute.
     ∙When the script finnishes it asks the user if they want to keep the log
      file or delete it. But that log file contains some essential things that
      the user needs to see (such as pacman's output when it installs libre
