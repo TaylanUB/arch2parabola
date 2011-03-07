@@ -233,9 +233,9 @@ section="---------- Package Replacement ----------"
 log_section
 cat << EOF
 
-* Pacman cache will be erased
-* Pacman database will be updated for parabola
-* Non free packages that have free replacement will be Synced
+* Pacman's cache will be erased
+* Pacman's database will be updated for parabola
+* Non free packages that have free replacements will be replaced
 
 Do you wish to continue? [y/n] 
 EOF
@@ -278,6 +278,8 @@ if_cancelled
 # Remove the packages that don't have free replacements.
 for package in ${exists[@]}
 do
+    # Pacman's `-c' option means that all packages that depend on the removed
+    # package will be uninstalled.
     pacman -Rc --noconfirm ${package} >> ${logname} 2>> ${logname} || abort
 done
 
