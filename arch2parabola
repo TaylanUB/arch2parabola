@@ -1,308 +1,218 @@
 #!/bin/bash
 
-# arch2parabola - converts an Arch Gnu/Linux system to Parabola Gnu/Linux-libre
-
+#
+# arch2parabola - converts an Arch GNU/Linux system to Parabola GNU/Linux-libre
+#
 #  Copyright © 2010 Joshua Ismael Haase Hernández
 #  Copyright © 2011 Joseph Graham
-
+#        ^^^ Lies, it's a TaylanUB rewrite !
+#  Copyright © 2011 Taylan Ulrich Bayırlı
+#
 #  ---------- GNU General Public License 3 ----------
-                                                                             
-#  This file is part of Parabola.                                          
-                                                                             
-#  Parabola is free software: you can redistribute it and/or modify        
-#  it under the terms of the GNU General Public License as published by    
-#  the Free Software Foundation, either version 3 of the License, or       
-#  (at your option) any later version.                                     
-                                                                             
-#  Parabola is distributed in the hope that it will be useful,             
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of          
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the           
-#  GNU General Public License for more details.                            
-                                                                             
-#  You should have received a copy of the GNU General Public License       
-#  along with Parabola.  If not, see <http://www.gnu.org/licenses/>.       
+#
+#  This file is part of Parabola.
+#
+#  Parabola is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  Parabola is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with Parabola.  If not, see <http://www.gnu.org/licenses/>.
+#
 
-# Set this to the URL of the blacklist.
-blacklist_url="http://repo.parabolagnulinux.org/docs/blacklist.txt"
+blacklist='http://repo.parabolagnulinux.org/docs/blacklist.txt'
 
-# Set this to the url of the index page which will be parsed to find out the
-# url of the mirrorlist.
-repo_index_page="http://repo.parabolagnulinux.org/core/os/any/"
+mirrorlist='http://repo.parabolagnulinux.org/files/mirrorlist'
 
-# Set this to the package name of Parabola's mirrorlist (excluding the version
-# number).
-parabola_mirrorlist_package_name="pacman-mirrorlist-libre"
+kernel_pkgname='kernel26'
 
-# Set this to the package name of Arch's default kernel (excluding the version
-# number).
-arch_default_kernel_package_name="kernel26"
+logfile="$(pwd)/arch2parabola-$$.log"
 
-# Make a temporary directory.
-tempdir=$(mktemp -d)
-
-# This will be the name of the log file.
-logname="$(pwd)/arch2parabola$(date +%Y%m%d).log"
-
-# These are the dependencies of the script.
-dependancies=(which date pacman wget seq sed wget test)
-
-# ---------- Function Declarations ----------
-
-# Define the abort procedure.
-function abort
+Usage ()
 {
-    cat << EOF
-Something failed in ${section}.
+    echo >&2 'arch2parabola [-c|--check-nonfree]'
+}
 
-A debug log has been saved to ${logname}.
+Log ()
+{
+    printf '%s\n' "$@"
+    printf '%s\n' "$@" >> "$logfile"
+}
 
-Please fix the error and re-run the script to finnish converting your system to
-Parabola Gnu/Linux.
-EOF
-    rm -rf ${tempdir}
+# Sets $section
+Section ()
+{
+    section=$1
+    Log '' "--- $section ---"
+}
+
+Abort ()
+{
+    Log  >&2 "$@"
+    Log  >&2 "Aborted in section: $section"
+    echo >&2 "Log saved to: $logfile"
     exit 1
 }
 
-# Ask yes or no (y/n), if given, stop, otherwise keep asking.
-# uses variable "q"
-function askyn
+# Sets $ans
+Ask ()
 {
-    case "$1" in 
-	y | n ) ;;
-	*) echo Answer "y" or "n"
-	   read q
-	   askyn ${q}
-	   ;;
+    unset ans
+    while true
+    do
+        printf '%s' "$1" >&2
+        read -r ans; ans=${ans,}
+        [[ $ans == [yn] ]] && break
+        echo '("y" for yes, "n" for no)' >&2
+    done
+}
+
+CheckAns ()
+{
+    case $ans in
+    y) ;;
+    n) Abort 'Cancelled by user.' ;;
+    *) echo >&2 'What the fuck?'
     esac
 }
 
-# This function logs, and echos the section.
-function log_section
+Download ()
 {
-    cat >> ${logname} << EOF
-
-${section}
-
-EOF
-    echo
-    echo ${section}
+    wget -nv -O- 2>> "$logfile"
 }
 
-# This function checks if the `askyn' function was cancelled, and if so, logs
-# it and aborts.
-function if_cancelled
-{
-    if [[ ${q} == "n" ]]
+# Sets $nonfree_pkgs and $replacements
+CheckNonfree ()
+    while IFS=: read -r pkg repl _
+    do
+        if pacman -Q "$pkg" > /dev/null 2>&1
+        then
+            nonfree_pkgs+=("$pkg")
+            replacements+=("$repl")
+            echo "$pkg, replacement: ${repl:-NONE!}"
+        fi
+    done <<< $(Download "$blacklist" | sort || Abort 'Download failed.')
+
+
+case $# in
+0) ;;
+1)
+    case $1 in
+    -c|--check-nonfree) CheckNonfree; exit ;;
+    *) Usage; exit 1
+    esac
+    ;;
+*) Usage; exit 1
+esac
+
+
+Section 'Sanity check'
+
+    if ! [[ -w / ]]
     then
-	    echo "The user canceled the procedure" >> ${logname}
-	    abort
+        echo >&2 'This script must be run as root.'
+        exit 1
+    fi
+
+    if ! pacman -Q "$kernel_pkgname" > /dev/null 2>&1
+    then
+        echo >&2 'The system is running a custom kernel.'
+        echo >&2 'Please uninstall it before re-running this script.'
+        echo >&2
+        echo >&2 'You can find a PKGBUILD for a linux-libre kernel at'
+        echo >&2
+        echo >&2 'http://repo.parabolagnulinux.org/pkgbuilds/'
+
+        exit 1
+    fi
+
+    if [[ -e $logfile ]]
+    then
+        Abort "The file '$logfile' already exists, not overwriting."
     else
-	    unset q
+        > "$logfile" || Abort "Can't touch '$logfile'!"
+        echo "Logging to: $logfile"
     fi
-}
 
-# This is an SGML parser function. It reads tags in the same way that `read'
-# reads lines. The element is assigned to var `element' and the content is
-# assigned to var `content'.
-function rdom
-{
-    local IFS=\>
-    read -d \< element content
-}
 
-section=" ---------- Sanity Check ----------"
+Section 'Non-free packages revision'
 
-declare issues=0
+    echo '* Downloading blacklist and searching for proprietary software on the system.'
 
-# If the user is not root then error and exit.
-(( EUID )) && { echo "This script should be run as root user." ; exit 1 ; }
+    CheckNonfree | tee -a "$logfile"
 
-# Check if the dependencies are available. This won't be needed if this
-# script is packaged.
-for dep in ${dependancies[@]}
-do
-    if ! which ${dep} > /dev/null 2> /dev/null
-    then
-	issues="1"
-	"${dep} is missing, please install it." >> ${logname}
-    fi
-done
 
-# Check if the system is running a custom kernel.
-if ! pacman -Q ${arch_default_kernel_package_name} >/dev/null 2>/dev/null
-then
-    issues="1"
-    cat >> ${logname} << EOF
-The system is running a custom kernel.
-Please uninstall it before running this script.
+Section 'Pacman mirrorlist replacement'
 
-You can find a PKGBUILD for a linux-libre kernel at
+    echo '* Pacman will be synced. (pacman -S pacman)'
+    echo '* /etc/pacman.d/mirrorlist will be replaced by the Parabola mirrorlist.'
+    echo '* Package databases will be forced to sync, to make the mirrorlist take effect. (pacman -Syy)'
+    echo
+    Ask  'Do you wish to continue? [y/n] '
+    CheckAns
 
-http://repo.parabolagnulinux.org/pkgbuilds/
+    pacman -S --noconfirm pacman 2>&1 | tee -a "$logfile" || Abort 'Syncing pacman failed.'
 
-EOF
-fi
+    Ask 'Shall the mirrorlist be run through rankmirrors? [y/n] '
+    case $ans in
+    y) Download "$mirrorlist" | rankmirrors - > /etc/pacman.d/mirrorlist ;;
+    n) Download "$mirrorlist" > /etc/pacman.d/mirrorlist ;;
+    *) echo 'What the fuck?'
+    esac
 
-# If anything went wrong then abort.
-(( issues )) && abort
+    pacman -Syy --noconfirm 2>&1 | tee -a "$logfile" || Abort 'Syncing databases failed.'
 
-unset issues
 
-section="---------- Non free packages revision ----------"
-log_section
+Section 'Package replacement and removal'
 
-cd ${tempdir}
+    echo '* Replacements will be installed when possible.'
+    echo '* Non-free packages will be removed.'
+    echo '  Packages rendered useless by this will be removed.'
+    echo '  (pacman -Rnsc ...) (Will let pacman prompt you once more!)'
+    echo '* Pacman cache will be cleared to purge the old non-free packages. (pacman -Sc)'
+    echo
+    Ask  'Do you wish to continue? [y/n] '
+    CheckAns
 
-echo "Downloading the blacklist of proprietary software packages."
+    i=0
+    while pkg=${nonfree_pkgs[$i]}; repl=${replacements[$i]}; (( ++i < ${#nonfree_pkgs[@]} ))
+    do
+        if [[ $repl ]]
+        then
+            if ! pacman -Q  "$repl" > /dev/null 2>&1 &&
+                 pacman -Si "$repl" > /dev/null 2>&1
+            then
+                pacman -S --noconfirm "$pkg" 2>&1 | tee -a "$logfile" ||
+                    Abort "Installation of '$repl' failed."
+            else
+                Log "The replacement '$repl' for '$pkg' was not found in the repos."
+            fi
+        else
+            Log "There is no known replacement for '$pkg'."
+        fi
+        # The replacement might have caused removal already
+        if pacman -Q "$pkg" > /dev/null 2>&1
+        then
+            pacman -Rnsc "$pkg" 2>&1 | tee -a "$logfile" || Abort "Removal of '$pkg' failed."
+        fi
+    done
 
-if ! wget ${blacklist_url} >> ${logname} \
-    2>> ${logname}
-then
-    echo "Download failed, exiting" >> ${logname}
-    abort
-fi
 
-declare -a exists
+Section 'You are now on Parabola GNU/Linux-libre !'
 
-echo "Searching for proprietary software on the system."
-echo
-exists[0]="These proprietary software packages have been found on the system:"
+    echo 'Welcome to Freedom.'
+    echo '* You have to manually remove any non-free packages you installed from the AUR.'
+    echo
+    Ask  'Do you wish to keep the log? [y/n] '
 
-for package in $(cut -d: -f1 blacklist.txt)
-do
-    # Check if the package is in pacman's database.
-    if pacman -Q ${package} >/dev/null 2>/dev/null
-    then
-        # Add this package to the array of blacklited packages that have been
-	# found in the system.
-	exists[${#exists[@]}]=${package}
-
-	# Echo and log the package.
-	echo ${package} | tee -a ${logname}
-    fi
-done
-
-unset exists[0]
-
-section="---------- Pacman mirrorlist replacement ----------"
-log_section
-cat << EOF
-* Pacman will be synced to avoid any errors.
-* Pacman mirror list will be replaced for parabola mirror list.
-
-Do you wish to continue? [y/n]
-EOF
-askyn
-if_cancelled
-
-# Update pacman.
-if ! pacman -S --noconfirm pacman
-then
-    echo "Syncing pacman failed." >> ${logname}
-    abort
-fi
-
-# This piece of code automatically detects the url of the mirrorlist and puts
-# it in the var `mirror'.
-while rdom
-do
-    if [[ ${element%%[[:space:]]*} == "a" ]]
-    then mirror="$(echo ${element##*[[:space:]]} | cut -d\" -f 2 | grep \
-	"${parabola_mirrorlist_package_name}-")"
-    fi
-done <<< "$(curl "${repo_index_page}")"
-
-# Install the mirrorlist.
-if ! pacman -U --noconfirm ${mirror} >> ${logname} 2>> ${logname}
-then
-    cat >> ${logname} << EOF 
-Installing the libre mirror list failed.
-Maybe there's a new mirrorlist and we need to update the script.
-
-If that's the case send a mail to dev@list.parabolagnulinux.org
-
-Otherwise, try again.
-EOF
-    abort
-fi
-
-# Rename `mirrorlist.pacnew' to `mirrorlist'.
-mv /etc/pacman.d/mirrorlist.pacnew /etc/pacman.d/mirrorlist
-
-section="---------- Package Replacement ----------"
-log_section
-cat << EOF
-
-* Pacman's cache will be erased
-* Pacman's database will be updated for parabola
-* Non free packages that have free replacements will be replaced
-
-Do you wish to continue? [y/n] 
-EOF
-askyn
-if_cancelled
-
-pacman -Scc --noconfirm >> ${logname} 2>> ${logname} || abort
-pacman -Syy --noconfirm >> ${logname} 2>> ${logname} || abort
-
-declare replacement
-
-# We search the blacklist to find packages that have libre replacements and
-# install them.
-for package in ${exists[@]}
-do
-    if [[ ${package} ]]
-    then
-	replacement=$(grep -e ${package}[:space:] blacklist.txt | cut -d: f2)
-	if [[ ${replacement} ]]
-	then
-	    pacman -S --noconfirm ${replacement} >> ${logname} 2>> ${logname} ||
-	    abort
-	fi
-    fi
-done
-
-unset replacement
-
-section="---------- Non-free packages removal ----------"
-log_section
-cat <<EOF
-
-* Non free packages that don't have free replacements will be Removed
-
-Do you wish to continue? [y/n] 
-EOF
-askyn
-if_cancelled
-
-# Remove the packages that don't have free replacements.
-for package in ${exists[@]}
-do
-    # Pacman's `-c' option means that all packages that depend on the removed
-    # package will be uninstalled.
-    pacman -Rc --noconfirm ${package} >> ${logname} 2>> ${logname} || abort
-done
-
-rm -rf ${tempdir}
-
-section="---------- You are now on Parabola GNU/Linux ----------"
-log_section
-cat << EOF
-Welcome to Freedom.
-
-* You have to manually remove any non-free packages you installed from the AUR.
-
-Do you wish to keep the log? [y/n] 
-EOF
-
-askyn
-
-# Ask the user if they want to keep the log and if not then delete it.
-if [[ ${q} == "y" ]]
-then
-    echo "The log has been saved in ${logname}"
-else
-    rm -f ${logname}
-fi
-
-exit 0
+    case $ans in
+    y) echo "The log is at: $logfile" ;;
+    n) rm -f "$logfile" ;;
+    *) echo >&2 'What the fuck?'
+    esac

@@ -7,10 +7,13 @@ arch2parabola:
      the user needs to see (such as pacman's output when it installs libre
      replacements). These things should be output to the terminal, as well as
      written in the log. Use `tee' to do this.
+     -- DONE
 
     #Low priority:
 
     ∙Make a brief explanation of everything it does in the comments at the top
      of the code.
+    -- Do we need it after the clean rewrite ?
     ∙After installing the libre mirrorlist, it should ask they user if
      `rankmirrors' should be run on the mirrorlist.
+    -- DONE
